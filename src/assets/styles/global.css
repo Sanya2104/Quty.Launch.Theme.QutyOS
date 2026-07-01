@@ -1,0 +1,60 @@
+/* src/assets/styles/global.css */
+
+:root {
+  --ui-font-size: 1;
+}
+
+* {
+  padding: 0 0;
+  margin: 0 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html,
+body {
+  font-family: 'Segoe UI', sans-serif;
+  font-size: calc(18px * var(--ui-font-size));
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow: hidden;
+}
+
+a {
+  text-decoration: none;
+  cursor: pointer;
+}
+a:hover,
+a:active {
+  text-decoration: none;
+}
+
+button {
+  font-family: 'Segoe UI', sans-serif;
+}
+
+img,
+svg {
+  vertical-align: bottom;
+}
+
+ul,
+nav,
+menu {
+  list-style: none;
+}
+
+hr {
+  height: 0;
+  border: none;
+}
+
+/* scrollbar */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-track-piece {
+  background-color: transparent;
+}

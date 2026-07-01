@@ -1,0 +1,11 @@
+/* src/assets/styles/fonts.css */
+
+/* number font */
+@font-face {
+  font-family: 'RippenBold';
+  src: url('../fonts/RippenBold.ttf');
+}
+
+.numberStyle {
+  font-family: 'RippenBold';
+}
