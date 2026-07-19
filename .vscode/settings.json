@@ -16,5 +16,6 @@
     "source.fixAll.eslint": "explicit"
   },
   "eslint.validate": ["javascript", "vue"],
-  "prettier.requireConfig": true
+  "prettier.requireConfig": true,
+  "editor.fontSize": 13
 }

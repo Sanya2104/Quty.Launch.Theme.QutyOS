@@ -19,7 +19,7 @@
 </script>
 
 <template>
-  <div class="apps-main bg-coolgray-080 filter-blur-normal">
+  <div class="apps-main bg-light-060 filter-blur-normal rounded-normal">
     <h1 class="apps-title color-light-080">📱 Приложения</h1>
 
     <!-- Состояние загрузки -->
@@ -55,7 +55,7 @@
             {{ app.isCustom ? '⚙️' : '📱' }}
           </span>
         </div>
-        <span class="app-name color-light-080">{{ app.name }}</span>
+        <span class="app-name color-coolgray-080">{{ app.name }}</span>
       </div>
     </div>
   </div>

@@ -46,7 +46,9 @@
     </nav>
 
     <!---->
-    <nav class="nav nav-pills col mx-5 px-5 bg-light-060 filter-blur-normal rounded-normal">
+    <nav
+      class="nav nav-pills col mx-5 px-5 bg-light-060 filter-blur-normal rounded-normal phone-d-none tablet-d-flex desktop-d-flex"
+    >
       <!-- <li class="nav-item px-10 py-10">
         <img
           :src="icon_fuel"
@@ -76,7 +78,10 @@
     <!---->
     <nav class="nav nav-pills col-auto mx-5 bg-light-060 filter-blur-normal rounded-normal">
       <li class="nav-item px-15 py-15">
-        <span class="h-var d-block" style="--h: 26px">Ср, 8 Июля 22:17</span>
+        <span class="h-var d-flex align-content-center" style="--h: 26px">
+          <span class="phone-d-none tablet-d-block desktop-d-block mr-10">Ср, 8 Июля</span>
+          <span>22:17</span>
+        </span>
       </li>
     </nav>
 
