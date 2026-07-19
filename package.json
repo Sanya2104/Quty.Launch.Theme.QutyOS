@@ -12,7 +12,8 @@
     "lint": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,vue,json,md}\"",
     "fix": "npm run format && npm run lint",
-    "deploy": "powershell -ExecutionPolicy Bypass -File ./deploy.ps1"
+    "deploy": "powershell -ExecutionPolicy Bypass -File ./deploy.ps1",
+    "compile": "powershell -ExecutionPolicy Bypass -File ./compile.ps1"
   },
   "dependencies": {
     "@tabler/icons-vue": "^3.44.0",
