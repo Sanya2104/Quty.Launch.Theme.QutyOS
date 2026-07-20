@@ -92,7 +92,7 @@ if ([string]::IsNullOrEmpty($changelog)) {
 }
 
 # ============================================
-# UPDATE manifest.json IN PUBLIC FOLDER
+# UPDATE manifest.json IN PUBLIC FOLDER (without BOM)
 # ============================================
 Write-Host ""
 Write-Host "📝 Обновление версии в manifest.json (public/)..." -ForegroundColor Cyan
@@ -101,8 +101,12 @@ if (Test-Path $manifestPath) {
     try {
         $manifestContent = Get-Content -Path $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $manifestContent.version = $newVersion
-        $manifestContent | ConvertTo-Json -Depth 10 | Set-Content -Path $manifestPath -Encoding UTF8
-        Write-Host "  ✅ Версия обновлена в public/manifest.json" -ForegroundColor Green
+        $jsonContent = $manifestContent | ConvertTo-Json -Depth 10
+        # Сохраняем без BOM
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        $bytes = $utf8NoBom.GetBytes($jsonContent)
+        [System.IO.File]::WriteAllBytes($manifestPath, $bytes)
+        Write-Host "  ✅ Версия обновлена в public/manifest.json (без BOM)" -ForegroundColor Green
     } catch {
         Write-Host "  ⚠️ Не удалось обновить версию: $_" -ForegroundColor Yellow
     }
@@ -115,8 +119,12 @@ if (Test-Path $manifestPath) {
         preview = "preview.png"
         repoUrl = "https://raw.githubusercontent.com/Sanya2104/Quty.Launch.Theme.QutyOS/main/"
     }
-    $defaultManifest | ConvertTo-Json -Depth 10 | Set-Content -Path $manifestPath -Encoding UTF8
-    Write-Host "  ✅ Создан public/manifest.json с версией $newVersion" -ForegroundColor Green
+    $jsonContent = $defaultManifest | ConvertTo-Json -Depth 10
+    # Сохраняем без BOM
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    $bytes = $utf8NoBom.GetBytes($jsonContent)
+    [System.IO.File]::WriteAllBytes($manifestPath, $bytes)
+    Write-Host "  ✅ Создан public/manifest.json с версией $newVersion (без BOM)" -ForegroundColor Green
 }
 
 # ============================================
@@ -217,7 +225,7 @@ $fileSize = [math]::Round((Get-Item $qutyThemePath).Length / 1MB, 2)
 Write-Host "  ✅ Файл создан: $themeName.qutytheme ($fileSize MB)" -ForegroundColor Green
 
 # ============================================
-# UPDATE THEME.JSON
+# UPDATE THEME.JSON (without BOM)
 # ============================================
 Write-Host ""
 Write-Host "📝 Обновление theme.json..." -ForegroundColor Cyan
@@ -234,9 +242,13 @@ $themeJson = @{
     lastUpdated = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 }
 
-# Save with formatting
-$themeJson | ConvertTo-Json -Depth 10 | Set-Content -Path $themeJsonPath -Encoding UTF8
-Write-Host "  ✅ theme.json обновлён (версия: $newVersion)" -ForegroundColor Green
+# Сохраняем без BOM
+$jsonContent = $themeJson | ConvertTo-Json -Depth 10
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+$bytes = $utf8NoBom.GetBytes($jsonContent)
+[System.IO.File]::WriteAllBytes($themeJsonPath, $bytes)
+
+Write-Host "  ✅ theme.json обновлён (версия: $newVersion, без BOM)" -ForegroundColor Green
 
 # ============================================
 # SUMMARY
