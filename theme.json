@@ -1,8 +1,8 @@
-﻿{
-  "name": "QutyOS Theme",
-  "version": "0.0.3",
-  "downloadUrl": "https://raw.githubusercontent.com/Sanya2104/Quty.Launch.Theme.QutyOS/main/QutyOS.qutytheme",
-  "lastUpdated": "2026-07-20 22:33:38",
-  "changelog": "ПроверОчка",
-  "fileSize": "0.99 MB"
+{
+    "version":  "0.0.4",
+    "name":  "QutyOS Theme",
+    "downloadUrl":  "https://raw.githubusercontent.com/Sanya2104/Quty.Launch.Theme.QutyOS/main/QutyOS.qutytheme",
+    "lastUpdated":  "2026-07-21 00:39:28",
+    "changelog":  "Исправление багов и улучшение производительности",
+    "fileSize":  "0.99 MB"
 }

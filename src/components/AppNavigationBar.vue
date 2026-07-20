@@ -78,7 +78,7 @@
     <!---->
     <nav class="nav nav-pills col-auto mx-5 bg-light-060 filter-blur-normal rounded-normal">
       <li class="nav-item px-15 py-15">
-        <span class="h-var d-flex align-content-center" style="--h: 26px">
+        <span class="h-var d-flex align-items-center" style="--h: 26px">
           <span class="phone-d-none tablet-d-block desktop-d-block mr-10">Ср, 8 Июля</span>
           <span>22:17</span>
         </span>
