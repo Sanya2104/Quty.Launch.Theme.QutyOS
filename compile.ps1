@@ -188,17 +188,33 @@ Write-Host "📦 Создание архива $themeName.qutytheme..." -Foregro
 Write-Host "  📋 Содержимое dist:" -ForegroundColor Cyan
 Get-ChildItem -Path $distPath | ForEach-Object { Write-Host "    $($_.Name)" }
 
-# Переходим в dist и архивируем оттуда
+# Переходим в папку dist
 Push-Location $distPath
 
+# Создаём архив через .NET (как в Windows "Отправить → Сжатая ZIP-папка")
 $zipPath = Join-Path $env:TEMP "$themeName.zip"
-# Удаляем старый zip если есть
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
 }
 
-# Архивируем содержимое dist (без папки dist)
-Compress-Archive -Path * -DestinationPath $zipPath -Force
+# Используем .NET Compression для создания ZIP (как вручную)
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$compressionLevel = [System.IO.Compression.CompressionLevel]::Optimal
+$zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
+
+# Добавляем все файлы и папки из dist
+Get-ChildItem -Path . -Recurse | ForEach-Object {
+    $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
+    if ($_.PSIsContainer) {
+        # Пропускаем папки — они создаются автоматически при добавлении файлов
+        # (папка создастся, когда добавим первый файл внутри неё)
+    } else {
+        # Добавляем файл
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $relativePath)
+    }
+}
+
+$zip.Dispose()
 
 # Возвращаемся обратно
 Pop-Location
@@ -206,7 +222,6 @@ Pop-Location
 # Проверяем созданный архив
 Write-Host "  📋 Проверка архива:" -ForegroundColor Cyan
 try {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     $entries = $zip.Entries | Select-Object -ExpandProperty FullName
     $zip.Dispose()
@@ -228,7 +243,9 @@ try {
         exit 1
     }
     
-    if ($entries -contains "assets/") {
+    # Проверяем наличие папки assets
+    $hasAssets = $entries | Where-Object { $_ -like "assets/*" } | Select-Object -First 1
+    if ($hasAssets) {
         Write-Host "  ✅ Папка assets найдена" -ForegroundColor Green
     } else {
         Write-Host "  ⚠️ Папка assets не найдена в корне архива" -ForegroundColor Yellow
@@ -239,12 +256,9 @@ try {
 
 # Rename to .qutytheme
 $qutyThemePath = Join-Path $outputPath "$themeName.qutytheme"
-
-# Удаляем старый .qutytheme если есть
 if (Test-Path $qutyThemePath) {
     Remove-Item $qutyThemePath -Force
 }
-
 Move-Item -Path $zipPath -Destination $qutyThemePath -Force
 
 # Get file size in MB
