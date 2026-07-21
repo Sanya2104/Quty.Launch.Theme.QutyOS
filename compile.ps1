@@ -15,6 +15,7 @@ $distPath = "D:\Android\Themes\Quty.Launch.Theme.QutyOS\dist"
 $outputPath = "D:\Android\Themes\Quty.Launch.Theme.QutyOS\output"
 $themeName = "QutyOS"
 $publicPath = Join-Path $projectPath "public"
+$tempThemePath = Join-Path $env:TEMP "qutytheme_temp"
 
 # Files to keep in the theme (copied from public folder to dist)
 $keepFiles = @("manifest.json", "preview.png", "preview.ico", "preview.jpg", "favicon.ico")
@@ -154,74 +155,90 @@ if (-not (Test-Path $distPath)) {
 }
 
 # ============================================
-# COPY FILES FROM PUBLIC TO DIST (BACKUP)
-# Vite should copy public files automatically,
-# but we do this as a backup in case it doesn't
+# COPY FILES TO TEMP (КАК В deploy.ps1)
 # ============================================
 Write-Host ""
-Write-Host "📋 Проверка наличия файлов из public в dist..." -ForegroundColor Cyan
+Write-Host "📋 Создание временной папки с файлами..." -ForegroundColor Cyan
 
+# Создаём чистую временную папку
+if (Test-Path $tempThemePath) {
+    Remove-Item -Path $tempThemePath -Recurse -Force
+}
+New-Item -ItemType Directory -Path $tempThemePath -Force | Out-Null
+
+# Копируем все файлы из dist во временную папку (как deploy.ps1)
+Copy-Item -Path "$distPath\*" -Destination $tempThemePath -Recurse -Force
+
+# Копируем защищённые файлы из public (если их нет)
 foreach ($file in $keepFiles) {
     $sourceFile = Join-Path $publicPath $file
-    $destFile = Join-Path $distPath $file
-    
-    if (Test-Path $sourceFile) {
-        # Проверяем, есть ли файл в dist
-        if (-not (Test-Path $destFile)) {
-            Copy-Item -Path $sourceFile -Destination $destFile -Force
-            Write-Host "  ✅ Скопирован (не был в dist): $file" -ForegroundColor Green
-        } else {
-            Write-Host "  ✅ Уже есть в dist: $file" -ForegroundColor Green
-        }
-    } else {
-        Write-Host "  ⚠️ Файл не найден в public: $file" -ForegroundColor Yellow
+    $destFile = Join-Path $tempThemePath $file
+    if ((Test-Path $sourceFile) -and (-not (Test-Path $destFile))) {
+        Copy-Item -Path $sourceFile -Destination $destFile -Force
+        Write-Host "  ✅ Скопирован: $file" -ForegroundColor Green
     }
 }
 
+Write-Host "  ✅ Все файлы скопированы во временную папку" -ForegroundColor Green
+
 # ============================================
-# CREATE .QUTYTHEME FILE
+# CREATE .QUTYTHEME FILE (using WinRAR)
 # ============================================
 Write-Host ""
-Write-Host "📦 Создание архива $themeName.qutytheme..." -ForegroundColor Cyan
+Write-Host "📦 Создание архива $themeName.qutytheme (через WinRAR)..." -ForegroundColor Cyan
 
-# Проверяем содержимое dist
-Write-Host "  📋 Содержимое dist:" -ForegroundColor Cyan
-Get-ChildItem -Path $distPath | ForEach-Object { Write-Host "    $($_.Name)" }
+# Проверяем содержимое временной папки
+Write-Host "  📋 Содержимое временной папки:" -ForegroundColor Cyan
+Get-ChildItem -Path $tempThemePath | ForEach-Object { Write-Host "    $($_.Name)" }
 
-# Переходим в папку dist
-Push-Location $distPath
+# Путь к WinRAR
+$winRarPath = "G:\Programs\WinRAR\WinRAR.exe"
 
-# Создаём архив через .NET (как в Windows "Отправить → Сжатая ZIP-папка")
-$zipPath = Join-Path $env:TEMP "$themeName.zip"
-if (Test-Path $zipPath) {
-    Remove-Item $zipPath -Force
-}
-
-# Используем .NET Compression для создания ZIP (как вручную)
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$compressionLevel = [System.IO.Compression.CompressionLevel]::Optimal
-$zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
-
-# Добавляем все файлы и папки из dist
-Get-ChildItem -Path . -Recurse | ForEach-Object {
-    $relativePath = $_.FullName.Substring((Get-Location).Path.Length + 1)
-    if ($_.PSIsContainer) {
-        # Пропускаем папки — они создаются автоматически при добавлении файлов
-        # (папка создастся, когда добавим первый файл внутри неё)
-    } else {
-        # Добавляем файл
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $relativePath)
+if (-not (Test-Path $winRarPath)) {
+    Write-Host "  ❌ WinRAR не найден по пути: $winRarPath" -ForegroundColor Red
+    Write-Host "  ⚠️ Используем стандартный ZIP..." -ForegroundColor Yellow
+    
+    # Fallback на стандартный ZIP
+    $zipPath = Join-Path $env:TEMP "$themeName.zip"
+    if (Test-Path $zipPath) {
+        Remove-Item $zipPath -Force
     }
+    
+    Push-Location $tempThemePath
+    Compress-Archive -Path * -DestinationPath $zipPath -Force
+    Pop-Location
+} else {
+    Write-Host "  ✅ Найден WinRAR: $winRarPath" -ForegroundColor Green
+    
+    $zipPath = Join-Path $env:TEMP "$themeName.zip"
+    if (Test-Path $zipPath) {
+        Remove-Item $zipPath -Force
+    }
+    
+    # Используем WinRAR для создания архива (как вручную)
+    Push-Location $tempThemePath
+    
+    # Параметры WinRAR:
+    $arguments = "a -afzip -m0 -r `"$zipPath`" *"
+    
+    Write-Host "  🔧 Запуск WinRAR: $winRarPath $arguments" -ForegroundColor Cyan
+    
+    $process = Start-Process -FilePath $winRarPath -ArgumentList $arguments -Wait -PassThru -NoNewWindow
+    
+    if ($process.ExitCode -ne 0) {
+        Write-Host "  ❌ Ошибка WinRAR (код: $($process.ExitCode))" -ForegroundColor Red
+        Pop-Location
+        exit 1
+    }
+    
+    Pop-Location
+    Write-Host "  ✅ Архив создан через WinRAR" -ForegroundColor Green
 }
-
-$zip.Dispose()
-
-# Возвращаемся обратно
-Pop-Location
 
 # Проверяем созданный архив
 Write-Host "  📋 Проверка архива:" -ForegroundColor Cyan
 try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     $entries = $zip.Entries | Select-Object -ExpandProperty FullName
     $zip.Dispose()
@@ -260,6 +277,9 @@ if (Test-Path $qutyThemePath) {
     Remove-Item $qutyThemePath -Force
 }
 Move-Item -Path $zipPath -Destination $qutyThemePath -Force
+
+# Delete temp folder
+Remove-Item -Path $tempThemePath -Recurse -Force
 
 # Get file size in MB
 $fileSize = [math]::Round((Get-Item $qutyThemePath).Length / 1MB, 2)
