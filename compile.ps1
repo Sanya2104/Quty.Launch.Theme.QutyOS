@@ -184,41 +184,68 @@ foreach ($file in $keepFiles) {
 Write-Host ""
 Write-Host "📦 Создание архива $themeName.qutytheme..." -ForegroundColor Cyan
 
-# Create temporary folder for archive
-$tempDir = Join-Path $env:TEMP "qutytheme_build_$([System.DateTime]::Now.Ticks)"
-New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+# Проверяем содержимое dist
+Write-Host "  📋 Содержимое dist:" -ForegroundColor Cyan
+Get-ChildItem -Path $distPath | ForEach-Object { Write-Host "    $($_.Name)" }
 
-# Copy all files from dist to temp folder
-Copy-Item -Path "$distPath\*" -Destination $tempDir -Recurse -Force
+# Переходим в dist и архивируем оттуда
+Push-Location $distPath
 
-# Check if manifest.json exists in temp
-$manifestPath = Join-Path $tempDir "manifest.json"
-if (-not (Test-Path $manifestPath)) {
-    Write-Host "  ❌ Ошибка: manifest.json не найден в dist!" -ForegroundColor Red
-    Write-Host "  Проверьте, что файл manifest.json есть в папке public/" -ForegroundColor Yellow
-    Remove-Item -Path $tempDir -Recurse -Force
-    exit 1
-}
-
-# Verify version in manifest.json
-try {
-    $manifestContent = Get-Content -Path $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $currentVersionInManifest = $manifestContent.version
-    Write-Host "  ✅ Версия в manifest.json: $currentVersionInManifest" -ForegroundColor Green
-} catch {
-    Write-Host "  ⚠️ Не удалось прочитать версию из manifest.json" -ForegroundColor Yellow
-}
-
-# Create ZIP archive
 $zipPath = Join-Path $env:TEMP "$themeName.zip"
-Compress-Archive -Path "$tempDir\*" -DestinationPath $zipPath -Force
+# Удаляем старый zip если есть
+if (Test-Path $zipPath) {
+    Remove-Item $zipPath -Force
+}
+
+# Архивируем содержимое dist (без папки dist)
+Compress-Archive -Path * -DestinationPath $zipPath -Force
+
+# Возвращаемся обратно
+Pop-Location
+
+# Проверяем созданный архив
+Write-Host "  📋 Проверка архива:" -ForegroundColor Cyan
+try {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+    $entries = $zip.Entries | Select-Object -ExpandProperty FullName
+    $zip.Dispose()
+    
+    Write-Host "    Содержимое архива:" -ForegroundColor Cyan
+    $entries | ForEach-Object { Write-Host "      $_" }
+    
+    if ($entries -contains "index.html") {
+        Write-Host "  ✅ index.html найден" -ForegroundColor Green
+    } else {
+        Write-Host "  ❌ index.html НЕ НАЙДЕН в архиве!" -ForegroundColor Red
+        exit 1
+    }
+    
+    if ($entries -contains "manifest.json") {
+        Write-Host "  ✅ manifest.json найден" -ForegroundColor Green
+    } else {
+        Write-Host "  ❌ manifest.json НЕ НАЙДЕН в архиве!" -ForegroundColor Red
+        exit 1
+    }
+    
+    if ($entries -contains "assets/") {
+        Write-Host "  ✅ Папка assets найдена" -ForegroundColor Green
+    } else {
+        Write-Host "  ⚠️ Папка assets не найдена в корне архива" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "  ⚠️ Не удалось проверить архив: $_" -ForegroundColor Yellow
+}
 
 # Rename to .qutytheme
 $qutyThemePath = Join-Path $outputPath "$themeName.qutytheme"
-Move-Item -Path $zipPath -Destination $qutyThemePath -Force
 
-# Delete temporary folder
-Remove-Item -Path $tempDir -Recurse -Force
+# Удаляем старый .qutytheme если есть
+if (Test-Path $qutyThemePath) {
+    Remove-Item $qutyThemePath -Force
+}
+
+Move-Item -Path $zipPath -Destination $qutyThemePath -Force
 
 # Get file size in MB
 $fileSize = [math]::Round((Get-Item $qutyThemePath).Length / 1MB, 2)
