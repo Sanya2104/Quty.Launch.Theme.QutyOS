@@ -12,19 +12,12 @@ Write-Host ""
 # Parameters
 $projectPath = "D:\Android\Themes\Quty.Launch.Theme.QutyOS"
 $distPath = "D:\Android\Themes\Quty.Launch.Theme.QutyOS\dist"
-$outputPath = "D:\Android\Themes\Quty.Launch.Theme.QutyOS\output"
 $themeName = "QutyOS"
 $publicPath = Join-Path $projectPath "public"
 $tempThemePath = Join-Path $env:TEMP "qutytheme_temp"
 
 # Files to keep in the theme (copied from public folder to dist)
 $keepFiles = @("manifest.json", "preview.png", "preview.ico", "preview.jpg", "favicon.ico")
-
-# Create output folder if it doesn't exist
-if (-not (Test-Path $outputPath)) {
-    New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
-    Write-Host "📁 Создана папка вывода: $outputPath" -ForegroundColor Cyan
-}
 
 # Create public folder if it doesn't exist
 if (-not (Test-Path $publicPath)) {
@@ -198,7 +191,6 @@ if (-not (Test-Path $winRarPath)) {
     Write-Host "  ❌ WinRAR не найден по пути: $winRarPath" -ForegroundColor Red
     Write-Host "  ⚠️ Используем стандартный ZIP..." -ForegroundColor Yellow
     
-    # Fallback на стандартный ZIP
     $zipPath = Join-Path $env:TEMP "$themeName.zip"
     if (Test-Path $zipPath) {
         Remove-Item $zipPath -Force
@@ -215,10 +207,14 @@ if (-not (Test-Path $winRarPath)) {
         Remove-Item $zipPath -Force
     }
     
-    # Используем WinRAR для создания архива (как вручную)
+    # Используем WinRAR для создания архива
     Push-Location $tempThemePath
     
-    # Параметры WinRAR:
+    # Параметры WinRAR: 
+    # a - добавить в архив
+    # -afzip - формат ZIP
+    # -m0 - без сжатия (Store) - как вручную
+    # -r - рекурсивно (включая подпапки)
     $arguments = "a -afzip -m0 -r `"$zipPath`" *"
     
     Write-Host "  🔧 Запуск WinRAR: $winRarPath $arguments" -ForegroundColor Cyan
@@ -271,27 +267,27 @@ try {
     Write-Host "  ⚠️ Не удалось проверить архив: $_" -ForegroundColor Yellow
 }
 
-# Rename to .qutytheme
-$qutyThemePath = Join-Path $outputPath "$themeName.qutytheme"
-if (Test-Path $qutyThemePath) {
-    Remove-Item $qutyThemePath -Force
-}
-Move-Item -Path $zipPath -Destination $qutyThemePath -Force
-
-# Delete temp folder
-Remove-Item -Path $tempThemePath -Recurse -Force
-
-# Get file size in MB
-$fileSize = [math]::Round((Get-Item $qutyThemePath).Length / 1MB, 2)
-Write-Host "  ✅ Файл создан: $themeName.qutytheme ($fileSize MB)" -ForegroundColor Green
-
 # ============================================
-# UPDATE THEME.JSON (without BOM)
+# COPY FILES TO PROJECT ROOT (замена существующих)
 # ============================================
 Write-Host ""
-Write-Host "📝 Обновление theme.json..." -ForegroundColor Cyan
+Write-Host "📦 Копирование файлов в корень проекта..." -ForegroundColor Cyan
 
-$themeJsonPath = Join-Path $outputPath "theme.json"
+# Путь к .qutytheme в корне проекта
+$qutyThemePath = Join-Path $projectPath "$themeName.qutytheme"
+
+# Удаляем старый .qutytheme если есть
+if (Test-Path $qutyThemePath) {
+    Remove-Item $qutyThemePath -Force
+    Write-Host "  🗑️ Удалён старый $themeName.qutytheme" -ForegroundColor Yellow
+}
+
+# Копируем .qutytheme в корень проекта
+Move-Item -Path $zipPath -Destination $qutyThemePath -Force
+Write-Host "  ✅ Скопирован $themeName.qutytheme" -ForegroundColor Green
+
+# Обновляем theme.json в корне проекта
+$themeJsonPath = Join-Path $projectPath "theme.json"
 
 # Create new theme.json
 $themeJson = @{
@@ -311,6 +307,12 @@ $bytes = $utf8NoBom.GetBytes($jsonContent)
 
 Write-Host "  ✅ theme.json обновлён (версия: $newVersion, без BOM)" -ForegroundColor Green
 
+# Delete temp folder
+Remove-Item -Path $tempThemePath -Recurse -Force
+
+# Get file size in MB
+$fileSize = [math]::Round((Get-Item $qutyThemePath).Length / 1MB, 2)
+
 # ============================================
 # SUMMARY
 # ============================================
@@ -323,11 +325,11 @@ Write-Host "📦 Версия: $newVersion"
 Write-Host "📄 Changelog:"
 Write-Host "$changelog"
 Write-Host ""
-Write-Host "📦 Готовые файлы (папка output):"
+Write-Host "📦 Файлы обновлены в корне проекта:"
 Write-Host "   📄 $themeName.qutytheme ($fileSize MB)" -ForegroundColor Cyan
 Write-Host "   📄 theme.json (версия: $newVersion)" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "📂 Путь к файлам: $outputPath" -ForegroundColor Cyan
+Write-Host "📂 Путь: $projectPath" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
 # Pause to see the result
