@@ -2,7 +2,7 @@
     "changelog":  "Обновление темы",
     "fileSize":  "2.72 MB",
     "name":  "QutyOS",
-    "version":  "0.0.19",
+    "version":  "0.0.20",
     "downloadUrl":  "https://raw.githubusercontent.com/Sanya2104/Quty.Launch.Theme.QutyOS/main/QutyOS.qutytheme",
-    "minLauncherVersion":  "1.0.0"
+    "minLauncherVersion":  "0.0.1"
 }
