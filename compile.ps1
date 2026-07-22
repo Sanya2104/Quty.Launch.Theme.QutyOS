@@ -1,336 +1,334 @@
-﻿# compile.ps1
-# Script for building QutyOS theme and creating .qutytheme file
+﻿# ============================================================
+# compile.ps1 — Скрипт сборки темы Quty.Launch
+# ============================================================
+# Назначение:
+#   1. Читает текущую версию из public/manifest.json
+#   2. Запрашивает новую версию (можно оставить текущую)
+#   3. Запрашивает changelog (многострочный)
+#   4. Запрашивает минимальную версию лаунчера (можно пропустить)
+#   5. Обновляет public/manifest.json (без BOM)
+#   6. Запускает сборку (npm run build)
+#   7. Копирует файлы из dist/ во временную папку
+#   8. Создаёт .qutytheme архив через WinRAR
+#   9. Копирует файлы в корень проекта:
+#      - QutyOS.qutytheme
+#      - theme.json
+#   10. Удаляет временную папку
+# ============================================================
 
-# Set UTF-8 encoding for console
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# Отключаем вывод команд в консоль (делаем скрипт тише)
+$ErrorActionPreference = "Stop"
 
-Write-Host "=========================================="
-Write-Host "📦 Сборка темы QutyOS"
-Write-Host "=========================================="
-Write-Host ""
+# --- Конфигурация ---
+$PROJECT_NAME = "QutyOS"                          # Имя темы
+$MANIFEST_PATH = "public/manifest.json"           # Путь к манифесту
+$DIST_PATH = "dist"                               # Папка со сборкой
+$TEMP_DIR = "temp_theme_build"                    # Временная папка для архива
+$OUTPUT_FILE = "$PROJECT_NAME.qutytheme"          # Итоговый файл темы
 
-# Parameters
-$projectPath = "D:\Android\Themes\Quty.Launch.Theme.QutyOS"
-$distPath = "D:\Android\Themes\Quty.Launch.Theme.QutyOS\dist"
-$themeName = "QutyOS"
-$publicPath = Join-Path $projectPath "public"
-$tempThemePath = Join-Path $env:TEMP "qutytheme_temp"
+# Путь к WinRAR (укажите свой!)
+$WINRAR_PATH = "G:\Programs\WinRAR\WinRAR.exe"
 
-# Files to keep in the theme (copied from public folder to dist)
-$keepFiles = @("manifest.json", "preview.png", "preview.ico", "preview.jpg", "favicon.ico")
-
-# Create public folder if it doesn't exist
-if (-not (Test-Path $publicPath)) {
-    New-Item -ItemType Directory -Path $publicPath -Force | Out-Null
-    Write-Host "📁 Создана папка public: $publicPath" -ForegroundColor Cyan
+# Проверяем, существует ли WinRAR
+if (-not (Test-Path $WINRAR_PATH)) {
+    Write-Host "❌ Ошибка: WinRAR не найден по пути: $WINRAR_PATH" -ForegroundColor Red
+    Write-Host "   Пожалуйста, укажите правильный путь к WinRAR.exe в скрипте." -ForegroundColor Yellow
+    exit 1
 }
 
-# ============================================
-# READ CURRENT VERSION FROM manifest.json
-# ============================================
-Write-Host "📋 Чтение текущей версии из manifest.json..." -ForegroundColor Cyan
+# --- Функции ---
 
-$manifestPath = Join-Path $publicPath "manifest.json"
-$currentVersion = "0.0.1"
-
-if (Test-Path $manifestPath) {
-    try {
-        $manifestContent = Get-Content -Path $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $currentVersion = $manifestContent.version
-        Write-Host "  ✅ Текущая версия: $currentVersion" -ForegroundColor Green
-    } catch {
-        Write-Host "  ⚠️ Не удалось прочитать manifest.json, используется версия по умолчанию: $currentVersion" -ForegroundColor Yellow
+# Функция для удаления BOM-символа из строки
+function Remove-BOM {
+    param([string]$content)
+    if ($content -and $content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) {
+        return $content.Substring(1)
     }
-} else {
-    Write-Host "  ⚠️ manifest.json не найден в public/, используется версия по умолчанию: $currentVersion" -ForegroundColor Yellow
+    return $content
 }
 
-# ============================================
-# ASK FOR NEW VERSION
-# ============================================
-Write-Host ""
-Write-Host "📝 Введите новый номер версии (сейчас $currentVersion):" -ForegroundColor Yellow
-$newVersion = Read-Host "> "
-
-if ([string]::IsNullOrEmpty($newVersion)) {
-    $newVersion = $currentVersion
-    Write-Host "  ⚠️ Оставлена текущая версия: $newVersion" -ForegroundColor Yellow
-} else {
-    Write-Host "  ✅ Новая версия: $newVersion" -ForegroundColor Green
-}
-
-# ============================================
-# ASK FOR CHANGELOG
-# ============================================
-Write-Host ""
-Write-Host "📝 Введите описание изменений (changelog) для этой версии:" -ForegroundColor Yellow
-Write-Host "   (несколько строк, для окончания введите пустую строку)" -ForegroundColor Yellow
-Write-Host ""
-
-$changelog = ""
-while ($true) {
-    $line = Read-Host "> "
-    if ([string]::IsNullOrEmpty($line)) {
-        break
-    }
-    if ([string]::IsNullOrEmpty($changelog)) {
-        $changelog = $line
+# Функция для обновления JSON файла без BOM
+function Update-JsonFile {
+    param(
+        [string]$FilePath,
+        [string]$Key,
+        [string]$Value
+    )
+    
+    # Читаем файл
+    $content = Get-Content -Path $FilePath -Raw -Encoding UTF8
+    $content = Remove-BOM -content $content
+    
+    # Парсим JSON
+    $json = $content | ConvertFrom-Json
+    
+    # Обновляем значение
+    if ($Value) {
+        $json | Add-Member -MemberType NoteProperty -Name $Key -Value $Value -Force
     } else {
-        $changelog = $changelog + "`n" + $line
+        # Если значение пустое, удаляем поле
+        $json.PSObject.Properties.Remove($Key)
     }
-}
-
-if ([string]::IsNullOrEmpty($changelog)) {
-    $changelog = "Исправление багов и улучшение производительности"
-    Write-Host "  ⚠️ Использован стандартный changelog" -ForegroundColor Yellow
-}
-
-# ============================================
-# UPDATE manifest.json IN PUBLIC FOLDER (without BOM)
-# ============================================
-Write-Host ""
-Write-Host "📝 Обновление версии в manifest.json (public/)..." -ForegroundColor Cyan
-
-if (Test-Path $manifestPath) {
-    try {
-        $manifestContent = Get-Content -Path $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $manifestContent.version = $newVersion
-        $jsonContent = $manifestContent | ConvertTo-Json -Depth 10
-        # Сохраняем без BOM
-        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        $bytes = $utf8NoBom.GetBytes($jsonContent)
-        [System.IO.File]::WriteAllBytes($manifestPath, $bytes)
-        Write-Host "  ✅ Версия обновлена в public/manifest.json (без BOM)" -ForegroundColor Green
-    } catch {
-        Write-Host "  ⚠️ Не удалось обновить версию: $_" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "  ⚠️ manifest.json не найден в public/, создаём новый..." -ForegroundColor Yellow
-    $defaultManifest = @{
-        name = "QutyOS Theme"
-        author = "QutyTeam"
-        version = $newVersion
-        preview = "preview.png"
-        repoUrl = "https://raw.githubusercontent.com/Sanya2104/Quty.Launch.Theme.QutyOS/main/"
-    }
-    $jsonContent = $defaultManifest | ConvertTo-Json -Depth 10
+    
+    # Преобразуем обратно в JSON (с отступами)
+    $newContent = $json | ConvertTo-Json -Depth 10
+    
     # Сохраняем без BOM
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    $bytes = $utf8NoBom.GetBytes($jsonContent)
-    [System.IO.File]::WriteAllBytes($manifestPath, $bytes)
-    Write-Host "  ✅ Создан public/manifest.json с версией $newVersion (без BOM)" -ForegroundColor Green
+    [System.IO.File]::WriteAllText($FilePath, $newContent, $utf8NoBom)
 }
 
-# ============================================
-# RUN BUILD
-# ============================================
+# --- Основной скрипт ---
+
 Write-Host ""
-Write-Host "🔨 Запуск сборки (npm run build)..." -ForegroundColor Cyan
-
-# Go to project directory
-Set-Location -Path $projectPath
-
-try {
-    npm run build
-    if ($LASTEXITCODE -ne 0) {
-        throw "Ошибка сборки"
-    }
-    Write-Host "  ✅ Сборка завершена успешно!" -ForegroundColor Green
-} catch {
-    Write-Host "  ❌ Ошибка при выполнении сборки: $_" -ForegroundColor Red
-    exit 1
-}
-
-# Check if dist directory exists
-if (-not (Test-Path $distPath)) {
-    Write-Host "  ❌ Ошибка: директория dist не найдена после сборки" -ForegroundColor Red
-    exit 1
-}
-
-# ============================================
-# COPY FILES TO TEMP (КАК В deploy.ps1)
-# ============================================
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "  🚀 СБОРКА ТЕМЫ $PROJECT_NAME" -ForegroundColor Cyan
+Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "📋 Создание временной папки с файлами..." -ForegroundColor Cyan
 
-# Создаём чистую временную папку
-if (Test-Path $tempThemePath) {
-    Remove-Item -Path $tempThemePath -Recurse -Force
-}
-New-Item -ItemType Directory -Path $tempThemePath -Force | Out-Null
+# 1. Читаем текущую версию из manifest.json
+Write-Host "📖 Чтение текущей версии из $MANIFEST_PATH..." -ForegroundColor Yellow
 
-# Копируем все файлы из dist во временную папку (как deploy.ps1)
-Copy-Item -Path "$distPath\*" -Destination $tempThemePath -Recurse -Force
+$manifestContent = Get-Content -Path $MANIFEST_PATH -Raw -Encoding UTF8
+$manifestContent = Remove-BOM -content $manifestContent
+$manifestJson = $manifestContent | ConvertFrom-Json
 
-# Копируем защищённые файлы из public (если их нет)
-foreach ($file in $keepFiles) {
-    $sourceFile = Join-Path $publicPath $file
-    $destFile = Join-Path $tempThemePath $file
-    if ((Test-Path $sourceFile) -and (-not (Test-Path $destFile))) {
-        Copy-Item -Path $sourceFile -Destination $destFile -Force
-        Write-Host "  ✅ Скопирован: $file" -ForegroundColor Green
-    }
-}
+$currentVersion = $manifestJson.version
+$currentMinLauncher = $manifestJson.minLauncherVersion
 
-Write-Host "  ✅ Все файлы скопированы во временную папку" -ForegroundColor Green
-
-# ============================================
-# CREATE .QUTYTHEME FILE (using WinRAR)
-# ============================================
-Write-Host ""
-Write-Host "📦 Создание архива $themeName.qutytheme (через WinRAR)..." -ForegroundColor Cyan
-
-# Проверяем содержимое временной папки
-Write-Host "  📋 Содержимое временной папки:" -ForegroundColor Cyan
-Get-ChildItem -Path $tempThemePath | ForEach-Object { Write-Host "    $($_.Name)" }
-
-# Путь к WinRAR
-$winRarPath = "G:\Programs\WinRAR\WinRAR.exe"
-
-if (-not (Test-Path $winRarPath)) {
-    Write-Host "  ❌ WinRAR не найден по пути: $winRarPath" -ForegroundColor Red
-    Write-Host "  ⚠️ Используем стандартный ZIP..." -ForegroundColor Yellow
-    
-    $zipPath = Join-Path $env:TEMP "$themeName.zip"
-    if (Test-Path $zipPath) {
-        Remove-Item $zipPath -Force
-    }
-    
-    Push-Location $tempThemePath
-    Compress-Archive -Path * -DestinationPath $zipPath -Force
-    Pop-Location
+Write-Host "   Текущая версия темы: $currentVersion" -ForegroundColor Gray
+if ($currentMinLauncher) {
+    Write-Host "   Текущая минимальная версия лаунчера: $currentMinLauncher" -ForegroundColor Gray
 } else {
-    Write-Host "  ✅ Найден WinRAR: $winRarPath" -ForegroundColor Green
-    
-    $zipPath = Join-Path $env:TEMP "$themeName.zip"
-    if (Test-Path $zipPath) {
-        Remove-Item $zipPath -Force
-    }
-    
-    # Используем WinRAR для создания архива
-    Push-Location $tempThemePath
-    
-    # Параметры WinRAR: 
-    # a - добавить в архив
-    # -afzip - формат ZIP
-    # -m0 - без сжатия (Store) - как вручную
-    # -r - рекурсивно (включая подпапки)
-    $arguments = "a -afzip -m0 -r `"$zipPath`" *"
-    
-    Write-Host "  🔧 Запуск WinRAR: $winRarPath $arguments" -ForegroundColor Cyan
-    
-    $process = Start-Process -FilePath $winRarPath -ArgumentList $arguments -Wait -PassThru -NoNewWindow
-    
-    if ($process.ExitCode -ne 0) {
-        Write-Host "  ❌ Ошибка WinRAR (код: $($process.ExitCode))" -ForegroundColor Red
-        Pop-Location
-        exit 1
-    }
-    
-    Pop-Location
-    Write-Host "  ✅ Архив создан через WinRAR" -ForegroundColor Green
+    Write-Host "   Минимальная версия лаунчера не указана" -ForegroundColor Gray
 }
-
-# Проверяем созданный архив
-Write-Host "  📋 Проверка архива:" -ForegroundColor Cyan
-try {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
-    $entries = $zip.Entries | Select-Object -ExpandProperty FullName
-    $zip.Dispose()
-    
-    Write-Host "    Содержимое архива:" -ForegroundColor Cyan
-    $entries | ForEach-Object { Write-Host "      $_" }
-    
-    if ($entries -contains "index.html") {
-        Write-Host "  ✅ index.html найден" -ForegroundColor Green
-    } else {
-        Write-Host "  ❌ index.html НЕ НАЙДЕН в архиве!" -ForegroundColor Red
-        exit 1
-    }
-    
-    if ($entries -contains "manifest.json") {
-        Write-Host "  ✅ manifest.json найден" -ForegroundColor Green
-    } else {
-        Write-Host "  ❌ manifest.json НЕ НАЙДЕН в архиве!" -ForegroundColor Red
-        exit 1
-    }
-    
-    # Проверяем наличие папки assets
-    $hasAssets = $entries | Where-Object { $_ -like "assets/*" } | Select-Object -First 1
-    if ($hasAssets) {
-        Write-Host "  ✅ Папка assets найдена" -ForegroundColor Green
-    } else {
-        Write-Host "  ⚠️ Папка assets не найдена в корне архива" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "  ⚠️ Не удалось проверить архив: $_" -ForegroundColor Yellow
-}
-
-# ============================================
-# COPY FILES TO PROJECT ROOT (замена существующих)
-# ============================================
 Write-Host ""
-Write-Host "📦 Копирование файлов в корень проекта..." -ForegroundColor Cyan
 
-# Путь к .qutytheme в корне проекта
-$qutyThemePath = Join-Path $projectPath "$themeName.qutytheme"
+# 2. Запрашиваем новую версию
+Write-Host "📝 Введите новую версию (Enter для сохранения текущей $currentVersion):" -ForegroundColor Yellow
+$newVersion = Read-Host
+if ([string]::IsNullOrWhiteSpace($newVersion)) {
+    $newVersion = $currentVersion
+    Write-Host "   ✅ Оставлена версия: $newVersion" -ForegroundColor Green
+} else {
+    Write-Host "   ✅ Установлена версия: $newVersion" -ForegroundColor Green
+}
+Write-Host ""
 
-# Удаляем старый .qutytheme если есть
-if (Test-Path $qutyThemePath) {
-    Remove-Item $qutyThemePath -Force
-    Write-Host "  🗑️ Удалён старый $themeName.qutytheme" -ForegroundColor Yellow
+# 3. Запрашиваем changelog
+Write-Host "📝 Введите changelog (многострочный, Enter для завершения):" -ForegroundColor Yellow
+Write-Host "   (Для завершения ввода введите пустую строку или 'end')" -ForegroundColor Gray
+$changelogLines = @()
+while ($true) {
+    $line = Read-Host
+    if ([string]::IsNullOrWhiteSpace($line) -or $line -eq "end") {
+        break
+    }
+    $changelogLines += $line
+}
+$changelog = if ($changelogLines.Count -gt 0) {
+    $changelogLines -join "`n"
+} else {
+    "Обновление темы"
+}
+Write-Host "   ✅ Changelog записан" -ForegroundColor Green
+Write-Host ""
+
+# 4. Запрашиваем минимальную версию лаунчера
+Write-Host "📝 Введите минимальную версию лаунчера (например, 1.0.0)" -ForegroundColor Yellow
+Write-Host "   (Enter для пропуска, текущее значение: $currentMinLauncher)" -ForegroundColor Gray
+$minLauncherVersion = Read-Host
+if ([string]::IsNullOrWhiteSpace($minLauncherVersion)) {
+    $minLauncherVersion = $currentMinLauncher
+    if ($minLauncherVersion) {
+        Write-Host "   ✅ Оставлена минимальная версия: $minLauncherVersion" -ForegroundColor Green
+    } else {
+        Write-Host "   ⏭️ Поле minLauncherVersion будет удалено" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "   ✅ Установлена минимальная версия: $minLauncherVersion" -ForegroundColor Green
+}
+Write-Host ""
+
+# 5. Обновляем manifest.json
+Write-Host "📝 Обновление $MANIFEST_PATH..." -ForegroundColor Yellow
+
+# Обновляем версию
+Update-JsonFile -FilePath $MANIFEST_PATH -Key "version" -Value $newVersion
+
+# Обновляем или удаляем minLauncherVersion
+if ($minLauncherVersion) {
+    Update-JsonFile -FilePath $MANIFEST_PATH -Key "minLauncherVersion" -Value $minLauncherVersion
+} else {
+    # Если пусто — удаляем поле
+    $content = Get-Content -Path $MANIFEST_PATH -Raw -Encoding UTF8
+    $content = Remove-BOM -content $content
+    $json = $content | ConvertFrom-Json
+    $json.PSObject.Properties.Remove("minLauncherVersion")
+    $newContent = $json | ConvertTo-Json -Depth 10
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($MANIFEST_PATH, $newContent, $utf8NoBom)
 }
 
-# Копируем .qutytheme в корень проекта
-Move-Item -Path $zipPath -Destination $qutyThemePath -Force
-Write-Host "  ✅ Скопирован $themeName.qutytheme" -ForegroundColor Green
+Write-Host "   ✅ manifest.json обновлён" -ForegroundColor Green
+Write-Host ""
 
-# Обновляем theme.json в корне проекта
-$themeJsonPath = Join-Path $projectPath "theme.json"
+# 6. Запускаем сборку
+Write-Host "🔨 Запуск сборки (npm run build)..." -ForegroundColor Yellow
+npm run build
 
-# Create new theme.json
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ Ошибка сборки! Скрипт остановлен." -ForegroundColor Red
+    exit 1
+}
+Write-Host "   ✅ Сборка завершена" -ForegroundColor Green
+Write-Host ""
+
+# 7. Создаём временную папку
+Write-Host "📁 Подготовка файлов для архива..." -ForegroundColor Yellow
+
+if (Test-Path $TEMP_DIR) {
+    Remove-Item -Path $TEMP_DIR -Recurse -Force
+}
+New-Item -Path $TEMP_DIR -ItemType Directory | Out-Null
+
+# Копируем файлы из dist во временную папку
+Copy-Item -Path "$DIST_PATH\*" -Destination $TEMP_DIR -Recurse -Force
+
+# Копируем manifest.json и preview из public во временную папку
+if (Test-Path "public\manifest.json") {
+    Copy-Item -Path "public\manifest.json" -Destination $TEMP_DIR -Force
+}
+if (Test-Path "public\preview.png") {
+    Copy-Item -Path "public\preview.png" -Destination $TEMP_DIR -Force
+}
+if (Test-Path "public\preview.jpg") {
+    Copy-Item -Path "public\preview.jpg" -Destination $TEMP_DIR -Force
+}
+if (Test-Path "public\preview.ico") {
+    Copy-Item -Path "public\preview.ico" -Destination $TEMP_DIR -Force
+}
+
+# Копируем favicon.ico если есть
+if (Test-Path "public\favicon.ico") {
+    Copy-Item -Path "public\favicon.ico" -Destination $TEMP_DIR -Force
+}
+
+Write-Host "   ✅ Файлы скопированы во временную папку" -ForegroundColor Green
+Write-Host ""
+
+# 8. Создаём ZIP архив через WinRAR (без сжатия)
+Write-Host "📦 Создание архива $OUTPUT_FILE..." -ForegroundColor Yellow
+
+# Удаляем старый архив если есть
+if (Test-Path $OUTPUT_FILE) {
+    Remove-Item -Path $OUTPUT_FILE -Force
+}
+
+# Формируем путь к архиву
+$zipPath = Join-Path -Path (Get-Location) -ChildPath $OUTPUT_FILE
+
+# Переходим во временную папку и создаём архив
+Push-Location $TEMP_DIR
+
+# WinRAR: a - добавить, -afzip - формат ZIP, -m0 - без сжатия, -r - рекурсивно
+$arguments = "a -afzip -m0 -r `"$zipPath`" *"
+$process = Start-Process -FilePath $WINRAR_PATH -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+
+Pop-Location
+
+if ($process.ExitCode -ne 0) {
+    Write-Host "❌ Ошибка создания архива! Код ошибки: $($process.ExitCode)" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "   ✅ Архив создан: $OUTPUT_FILE" -ForegroundColor Green
+
+# Проверяем размер архива
+$fileSize = (Get-Item $OUTPUT_FILE).Length
+$fileSizeMB = [math]::Round($fileSize / 1MB, 2)
+Write-Host "   📊 Размер архива: $fileSizeMB MB" -ForegroundColor Gray
+Write-Host ""
+
+# 9. Создаём theme.json для обновлений
+Write-Host "📝 Создание theme.json..." -ForegroundColor Yellow
+
+# Формируем ссылку на скачивание (используем raw.githubusercontent.com)
+$repoUrl = "https://raw.githubusercontent.com/Sanya2104/Quty.Launch.Theme.QutyOS/main"
+$downloadUrl = "$repoUrl/$OUTPUT_FILE"
+
+# Создаём объект для theme.json
 $themeJson = @{
-    name = "QutyOS Theme"
+    name = $PROJECT_NAME
     version = $newVersion
-    downloadUrl = "https://raw.githubusercontent.com/Sanya2104/Quty.Launch.Theme.QutyOS/main/$themeName.qutytheme"
+    downloadUrl = $downloadUrl
     changelog = $changelog
-    fileSize = "$fileSize MB"
-    lastUpdated = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    fileSize = "$fileSizeMB MB"
 }
+
+# Добавляем minLauncherVersion только если она указана
+if ($minLauncherVersion) {
+    $themeJson | Add-Member -MemberType NoteProperty -Name "minLauncherVersion" -Value $minLauncherVersion
+}
+
+# Преобразуем в JSON с отступами
+$themeJsonContent = $themeJson | ConvertTo-Json -Depth 10
 
 # Сохраняем без BOM
-$jsonContent = $themeJson | ConvertTo-Json -Depth 10
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-$bytes = $utf8NoBom.GetBytes($jsonContent)
-[System.IO.File]::WriteAllBytes($themeJsonPath, $bytes)
+[System.IO.File]::WriteAllText("theme.json", $themeJsonContent, $utf8NoBom)
 
-Write-Host "  ✅ theme.json обновлён (версия: $newVersion, без BOM)" -ForegroundColor Green
-
-# Delete temp folder
-Remove-Item -Path $tempThemePath -Recurse -Force
-
-# Get file size in MB
-$fileSize = [math]::Round((Get-Item $qutyThemePath).Length / 1MB, 2)
-
-# ============================================
-# SUMMARY
-# ============================================
+Write-Host "   ✅ theme.json создан" -ForegroundColor Green
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "✨ Готово! Тема QutyOS успешно собрана!" -ForegroundColor Green
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "📦 Версия: $newVersion"
-Write-Host "📄 Changelog:"
-Write-Host "$changelog"
-Write-Host ""
-Write-Host "📦 Файлы обновлены в корне проекта:"
-Write-Host "   📄 $themeName.qutytheme ($fileSize MB)" -ForegroundColor Cyan
-Write-Host "   📄 theme.json (версия: $newVersion)" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "📂 Путь: $projectPath" -ForegroundColor Cyan
-Write-Host "==========================================" -ForegroundColor Cyan
 
-# Pause to see the result
-Read-Host "`nНажмите Enter для выхода"
+# 10. Копируем файлы в корень проекта (исправлено!)
+Write-Host "📁 Копирование файлов в корень проекта..." -ForegroundColor Yellow
+
+# Проверяем, что файл существует и не пытаемся скопировать сам в себя
+# Просто проверяем, что файл уже в корне (он там и создался)
+if (Test-Path $OUTPUT_FILE) {
+    # Файл уже в корне, ничего не делаем
+    Write-Host "   ✅ $OUTPUT_FILE уже в корне проекта" -ForegroundColor Green
+}
+
+# theme.json тоже уже в корне
+if (Test-Path "theme.json") {
+    Write-Host "   ✅ theme.json уже в корне проекта" -ForegroundColor Green
+}
+
+Write-Host ""
+
+# 11. Удаляем временную папку
+Write-Host "🧹 Очистка временных файлов..." -ForegroundColor Yellow
+if (Test-Path $TEMP_DIR) {
+    Remove-Item -Path $TEMP_DIR -Recurse -Force
+}
+Write-Host "   ✅ Временная папка удалена" -ForegroundColor Green
+Write-Host ""
+
+# 12. Выводим итоговую информацию
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "  ✅ СБОРКА ЗАВЕРШЕНА УСПЕШНО!" -ForegroundColor Green
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "📦 Итоговые файлы:" -ForegroundColor Yellow
+Write-Host "   📄 $OUTPUT_FILE ($fileSizeMB MB)" -ForegroundColor White
+Write-Host "   📄 theme.json" -ForegroundColor White
+Write-Host ""
+Write-Host "📊 Информация о версии:" -ForegroundColor Yellow
+Write-Host "   Версия темы: $newVersion" -ForegroundColor White
+if ($minLauncherVersion) {
+    Write-Host "   Минимальная версия лаунчера: $minLauncherVersion" -ForegroundColor White
+} else {
+    Write-Host "   Минимальная версия лаунчера: не указана" -ForegroundColor Gray
+}
+Write-Host ""
+Write-Host "📝 Changelog:" -ForegroundColor Yellow
+Write-Host "   $changelog" -ForegroundColor White
+Write-Host ""
+
+Write-Host "🔗 Ссылка для скачивания:" -ForegroundColor Yellow
+Write-Host "   $downloadUrl" -ForegroundColor Gray
+Write-Host ""
+
+Write-Host "==================================================" -ForegroundColor Cyan
